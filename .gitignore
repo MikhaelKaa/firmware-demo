@@ -1,0 +1,15 @@
+*.d
+*.o
+*.lst
+*.su
+
+*.map
+*.disasm
+
+*.elf
+*.hex
+*.bin
+
+firmware/local.mk
+.vscode/*
+.aider*
