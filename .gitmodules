@@ -1,0 +1,3 @@
+[submodule "firmware/core"]
+	path = firmware/core
+	url = git@github.com:MikhaelKaa/firmware-core.git
