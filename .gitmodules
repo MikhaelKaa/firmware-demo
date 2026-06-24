@@ -1,4 +1,4 @@
 [submodule "firmware/core"]
 	path = firmware/core
 	url = git@github.com:MikhaelKaa/firmware-core.git
-	branch = DEB_BOARD/STM32F4XX_M
+	branch = DEV_BOARD/STM32F4XX_M
