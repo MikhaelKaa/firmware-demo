@@ -32,7 +32,7 @@ C_SOURCES += cli/time/ucmd_time.c
 C_INCLUDES += -Icli/time
 
 # micros (from core submodule)
-C_INCLUDES += -Icore/lib/micros
+C_INCLUDES += -Icore/lib/time
 
 # CLI led
 C_SOURCES += cli/led/ucmd_led.c
