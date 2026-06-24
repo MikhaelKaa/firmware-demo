@@ -13,51 +13,42 @@ BUILD_DIR = build
 # default mcu path
 MCU_PATH ?= stm32f407vg
 
-# include mcu files
-include ./mcu/$(MCU_PATH)/device.mk
+# include device config from core submodule
+include core/device.mk
 
 sinclude ./local.mk
 
-# C sources
-C_SOURCES += kernel/kernel.c
-C_SOURCES += kernel/syscalls.c
-C_SOURCES += kernel/sysmem.c
-C_SOURCES += kernel/svccalls.c
-C_SOURCES += kernel/drv_face.c
-# C includes
-C_INCLUDES += -Ikernel
+#
+C_SOURCES += cli/u_read_line/microrl.c
+C_SOURCES += cli/u_read_line/ucmd.c
+C_INCLUDES += -Icli/u_read_line
 
-# App CMD Read line
-C_SOURCES += app/u_read_line/microrl.c
-C_SOURCES += app/u_read_line/ucmd.c
-C_INCLUDES += -Iapp/u_read_line
+# CLI memory viewer
+C_SOURCES += cli/mem/memory_man.c
+C_INCLUDES += -Icli/mem
 
-# App memory viewer
-C_SOURCES += app/mem/memory_man.c
-C_INCLUDES += -Iapp/mem
+# CLI time
+C_SOURCES += cli/time/ucmd_time.c
+C_INCLUDES += -Icli/time
 
-# App time
-C_SOURCES += app/time/ucmd_time.c
-C_INCLUDES += -Iapp/time
+# micros (from core submodule)
+C_INCLUDES += -Icore/lib/micros
 
-# micros
-C_INCLUDES += -Iapp/micros
+# CLI led
+C_SOURCES += cli/led/ucmd_led.c
+C_INCLUDES += -Icli/led
 
-# App led
-C_SOURCES += app/led/ucmd_led.c
-C_INCLUDES += -Iapp/led
+# CLI w25q
+C_SOURCES += cli/w25q/ucmd_w25q.c
+C_INCLUDES += -Icli/w25q
 
-# App w25q
-C_SOURCES += app/w25q/ucmd_w25q.c
-C_INCLUDES += -Iapp/w25q
+# CLI usb_cdc
+C_SOURCES += cli/usb_cdc/ucmd_usb.c
+C_INCLUDES += -Icli/usb_cdc
 
-# App usb_cdc
-C_SOURCES += app/usb_cdc/ucmd_usb.c
-C_INCLUDES += -Iapp/usb_cdc
-
-# App adc
-C_SOURCES += app/adc/ucmd_adc.c
-C_INCLUDES += -Iapp/adc
+# CLI adc
+C_SOURCES += cli/adc/ucmd_adc.c
+C_INCLUDES += -Icli/adc
 
 #######################################
 # binaries
@@ -78,7 +69,7 @@ SZ = $(PREFIX)size
 endif
 HEX = $(CP) -O ihex
 BIN = $(CP) -O binary -S
- 
+
 
 
 # mcu
@@ -180,19 +171,19 @@ clean:
 
 # vscode debugger setup for kernel
 setup-vscode:
-	@if [ -d "./mcu/$(MCU_PATH)/.vscode" ]; then \
-		echo "Copying .vscode files from ./mcu/$(MCU_PATH)/.vscode to ../"; \
+	@if [ -d "./core/.vscode" ]; then \
+		echo "Copying .vscode files from ./core/.vscode to ../"; \
 		rm -rf ../.vscode; \
 		mkdir ../.vscode; \
-		cp -r ./mcu/$(MCU_PATH)/.vscode/* ../.vscode/; \
+		cp -r ./core/.vscode/* ../.vscode/; \
 		echo "Done."; \
 	else \
-		echo "Warning: .vscode directory not found in ./mcu/$(MCU_PATH)/"; \
+		echo "Warning: .vscode directory not found in ./core/"; \
 	fi
 
 #  default OpenOCD transport (see local.mk)
-OPENOCD_TRANSPORT_CFG ?= mcu/common/openocd/stlink.cfg
-# Load firmware.bin (hex) use OpenOCD
+OPENOCD_TRANSPORT_CFG ?= core/vendor/openocd/stlink.cfg
+# Load firmware (hex) use OpenOCD
 load:
 	openocd -f $(OPENOCD_TRANSPORT_CFG) -f $(OPENOCD_MCU_CFG) -c init -c "reset halt" -c "flash write_image erase $(BUILD_DIR)/$(TARGET).hex" -c "reset run" -c "exit"
 
