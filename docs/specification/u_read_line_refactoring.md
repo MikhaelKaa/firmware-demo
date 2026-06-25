@@ -3,8 +3,8 @@
 
 # Спецификация рефакторинга модуля u_read_line
 
-**Дата:** 2026-06-25  
-**Автор:** Michael Kaa  
+**Дата:** 2026-06-25
+**Автор:** Michael Kaa
 **Статус:** Черновик
 
 ---
@@ -39,7 +39,7 @@
 
 - Дублирующие include и предупреждения компилятора
 - Нарушение архитектурной изоляции слоев (CMSIS в CLI)
-- Блокирующий `scanf` вместо неблокирующего чтения
+- Использование `scanf` (stdio) вместо прямого чтения через `drv_face_t`
 - Race condition при обработке ESC-последовательностей при быстрой отсылке символов
 - Нестыковка стилистики с остальными модулями проекта
 
@@ -49,13 +49,13 @@
 
 ### 2.1 Оригинальная библиотека microrl
 
-Библиотека `microrl` была создана Eugene Samoylov (Helius, ghelius@gmail.com).  
-Оригинальный репозиторий: <https://github.com/helius/microrl>  
+Библиотека `microrl` была создана Eugene Samoylov (Helius, ghelius@gmail.com).
+Оригинальный репозиторий: <https://github.com/helius/microrl>
 Оригинальная лицензия не указана явно; код используется с явного разрешения правообладателя.
 
 ### 2.2 term_gxf.h
 
-Идея ANSI-escape макросов принадлежит Zefick, статья «Терминальная графика» на Habr (28 марта 2017).  
+Идея ANSI-escape макросов принадлежит Zefick, статья «Терминальная графика» на Habr (28 марта 2017).
 Ссылка: <https://habr.com/ru/articles/325082/>
 
 ### 2.3 Требования по атрибуции
@@ -84,11 +84,11 @@
 | E2 | 35 | `#include "stm32f407xx.h"` нарушает изоляцию слоев (CMSIS в app-слое) | Высокий |
 | E3 | 134 | `volatile uint8_t ucmd_default_rx` — volatile не нужен, переменная не в прерывании | Средний |
 | E4 | 134 | `uint8_t` для `scanf("%c")` — требуется `int` по стандарту C99 | Высокий |
-| E5 | 156 | Блокирующий `scanf` в main-loop функции | Критический |
+| E5 | 156 | Использование `scanf` (stdio) вместо прямого чтения из драйвера | Средний |
 | E6 | 95-96 | `(const char **)argv` — нарушение const-correctness (discards qualifier) | Средний |
 | E7 | 99-103 | Разрозненный вывод сообщения "unknown command" без завершающего `\r\n` в одной строке | Низкий |
 | E8 | 101 | Лишний каст `(char*)&argv[i][0]`, достаточно `argv[i]` | Низкий |
-| E9 | 36-41 | `ucmd_mcu_reset()` содержит прямой вызов `NVIC_SystemReset()` (CMSIS) | Высокий |
+| E9 | 36-41 | `ucmd_mcu_reset()` содержит прямой вызов `NVIC_SystemReset()` (CMSIS). Вынести из модуля, временно оставить с пометкой | Высокий |
 
 ### 3.2 Предупреждения компилятора в microrl.c
 
@@ -96,14 +96,14 @@
 |---|--------|----------|-----------|
 | W1 | 10 | `<stdlib.h>` подключен, но не используется | Средний |
 | W2 | 319-340 | Поля `escape_seq`, `escape` не инициализируются в `microrl_init()` | Высокий |
-| W3 | 572-700 | Switch-case fall-through без явных комментариев (может генерировать варнинги при `-Wimplicit-fallthrough`) | Средний |
+| W3 | 572-700 | Switch-case fall-through без явных комментариев | Средний |
 
 ### 3.3 Архитектурные проблемы
 
 | # | Описание | Приоритет |
 |---|----------|-----------|
 | A1 | ESC-последовательности "разрезаются" при быстром вызове `ucmd_default_proc()` — состояние escape-парсера рассинхронизируется | Критический |
-| A2 | Блокирующий `scanf` в функции, предназначенной для вызова в main loop | Высокий |
+| A2 | Чтение ввода через stdio (`scanf`) вместо прямого доступа к `drv_face_t` | Средний |
 | A3 | Отсутствие rate limiting — функция обрабатывается слишком часто | Средний |
 
 ### 3.4 Стилистические проблемы
@@ -123,7 +123,7 @@
 1. **Собираться без предупреждений** при `-Wall -Wextra -pedantic`
 2. **Не нарушать изоляцию слоев** — отсутствие CMSIS в коде, не относящемся к драйверам
 3. **Корректно обрабатывать ESC-последовательности** независимо от частоты вызова `proc()`
-4. **Использовать неблокирующее чтение** вместо `scanf`
+4. **Использовать чтение через `drv_face_t`** вместо `scanf`
 5. **Соответствовать стилистике проекта** — snake_case, Doxygen-комментарии, структура кода
 6. **Содержать атрибуцию авторов** во всех файлах на basis стороннего кода
 
@@ -135,32 +135,19 @@
 
 #### 5.1.1 Атрибуция
 
-Добавить заголовок:
-```c
-/*
- * Based on microrl library by Eugene Samoylov (Helius) <ghelius@gmail.com>
- * Original: https://github.com/helius/microrl
- * Modified for firmware-demo project by Michael Kaa
- */
-```
+Добавить заголовок (см. раздел 2.3).
 
 #### 5.1.2 Добавление ESC-таймаута
 
-Добавить макроопределение для таймаута ESC-последовательностей:
-
 ```c
-/*
- * Timeout for incomplete ESC sequences (in microseconds).
- * If after receiving ESC character, the continuation does not arrive
- * within this interval, the escape state is reset and the pending
- * character is processed as a normal printable character.
- */
 #define _ESC_TIMEOUT_US  500
 ```
 
+Таймаут для незавершённых ESC-последовательностей (в микросекундах). Если после получения символа ESC продолжение не приходит в течение этого интервала, состояние escape сбрасывается и ожидаемый символ обрабатывается как обычный печатаемый символ.
+
 #### 5.1.3 Очистка
 
-Убрать закомментированные варианты конфигурации, оставив только активные настройки с комментариями о доступных альтернативах в одном месте.
+Убрать закомментированные варианты конфигурации, оставив только активные настройки.
 
 ---
 
@@ -172,7 +159,7 @@
 
 #### 5.2.2 Изменение структуры microrl_t
 
-Добавить поле для ESC-таймаута:
+Добавить поле для ESC-таймаута рядом с существующими полями `escape_seq` и `escape`:
 
 ```c
 #ifdef _USE_ESC_SEQ
@@ -180,17 +167,9 @@
 #endif
 ```
 
-Положение в структуре — рядом с существующими полями `escape_seq` и `escape`.
-
 #### 5.2.3 Исправление определений true/false
 
-Заменить ручные `#define true 1 / #define false 0` на подключение `<stdbool.h>`:
-
-```c
-#include <stdbool.h>
-```
-
-И убрать ручные дефайны (строки 6-7).
+Заменить ручные `#define true 1 / #define false 0` на подключение `<stdbool.h>` и убрать ручные дефайны (строки 6-7).
 
 ---
 
@@ -202,11 +181,9 @@
 
 #### 5.3.2 Удаление неиспользуемых include
 
-Убрать `#include <stdlib.h>` (строка 10) — не используется.
+Убрать `#include <stdlib.h>` (строка 10).
 
 #### 5.3.3 Инициализация полей в microrl_init()
-
-В `microrl_init()` добавить инициализацию escape-полей:
 
 ```c
 #ifdef _USE_ESC_SEQ
@@ -220,38 +197,11 @@
 
 Добавить `#include "precise_time.h"` для реализации ESC-таймаута.
 
-**Обоснование:** Файл microrl.c находится в слое `cli/u_read_line`, а не в чистой бизнес-логике (`app`). Использование CMSIS через precise_time.h допустимо, так как это часть infrastructure, а не логики приложения.
+**Обоснование:** Файл microrl.c находится в слое `cli/u_read_line`, а не в чистой бизнес-логике (`app`). Использование CMSIS через precise_time.h допустимо, так как это часть infrastructure.
 
 #### 5.3.5 Реализация ESC-таймаута
 
-В функции `microrl_insert_char()` заменить текущую логику escape-обработки:
-
-**Было (строки 566-570):**
-```c
-#ifdef _USE_ESC_SEQ
-    if (pThis->escape) {
-        if (escape_process(pThis, ch))
-            pThis->escape = 0;
-    } else {
-#endif
-```
-
-**Стало:**
-```c
-#ifdef _USE_ESC_SEQ
-    if (pThis->escape) {
-        /* Check timeout — if ESC continuation did not arrive in time, reset state */
-        if (pt_elapsed_us(pThis->escape_stamp) > _ESC_TIMEOUT_US) {
-            pThis->escape = 0;
-            /* Fall through to process ch as a normal character */
-        } else if (escape_process(pThis, ch)) {
-            pThis->escape = 0;
-        }
-    } else {
-#endif
-```
-
-В case KEY_ESC добавить установку метки времени:
+В `microrl_insert_char()` при входящем ESC установить таймстемп:
 
 ```c
 case KEY_ESC:
@@ -262,11 +212,25 @@ case KEY_ESC:
             break;
 ```
 
+При проверке escape-состояния добавить проверку таймаута:
+
+```c
+#ifdef _USE_ESC_SEQ
+    if (pThis->escape) {
+        if (pt_elapsed_us(pThis->escape_stamp) > _ESC_TIMEOUT_US) {
+            pThis->escape = 0;
+            /* Fall through to process ch as normal character */
+        } else if (escape_process(pThis, ch)) {
+            pThis->escape = 0;
+        }
+    } else {
+#endif
+```
+
 #### 5.3.6 Стилизация функций
 
-Привести функции к единому стилю:
 - Добавить Doxygen-комментарии к публичным функциям
-- Унифицировать отступы и расстановку фигурных скобок по образцу `ucmd_adc.c`
+- Унифицировать отступы по образцу `ucmd_adc.c`
 - Добавить комментарии `// fall through` где это намеренное поведение
 
 ---
@@ -275,81 +239,7 @@ case KEY_ESC:
 
 #### 5.4.1 Doxygen-комментарии
 
-Добавить документацию ко всем публичным функциям и типам:
-
-```c
-/**
- * @brief Код возврата, указывающий что команда не найдена в таблице.
- */
-#define UCMD_CMD_NOT_FOUND INT_MIN
-
-/**
- * @brief Тип функции-обработчика команды.
- *
- * @param argc  Количество аргументов.
- * @param argv  Массив строк-аргументов.
- * @return      0 при успехе, отрицательный код ошибки при сбое.
- */
-typedef int (*command_cb)(int argc, char **argv);
-
-/**
- * @brief Структура описания одной команды CLI.
- */
-typedef struct command {
-    const char *cmd;       /**< Строка команды для сравнения */
-    const char *help;      /**< Справка по команде */
-    command_cb fn;         /**< Функция-обработчик */
-} command_t;
-
-/**
- * @brief Инициализация CLI с настройками по умолчанию.
- *
- * Вызывать один раз при старте системы после инициализации подсистемы ввода/вывода.
- */
-void ucmd_default_init(void);
-
-/**
- * @brief Периодическая обработка входящих символов (неблокирующая).
- *
- * Вызывать из main loop. Функция читает доступный символ (если есть)
- * и передает его в readline-парсер. Включен rate limiting.
- */
-void ucmd_default_proc(void);
-
-/**
- * @brief Парсинг команды из таблицы и её выполнение.
- *
- * @param cmd_list  Таблица команд для поиска.
- * @param argc      Количество аргументов.
- * @param argv      Массив строк-аргументов.
- * @return          Код возврата обработчика или UCMD_CMD_NOT_FOUND.
- */
-int ucmd_parse(command_t cmd_list[], int argc, const char **argv);
-
-/**
- * @brief Обработчик команды "help".
- *
- * Выводит список доступных команд и их описание.
- * @param argc  Количество аргументов (игнорируется).
- * @param argv  Массив аргументов (игнорируется).
- * @return      0 при успехе.
- */
-int ucmd_help(int argc, char *argv[]);
-
-/**
- * @brief Callback для вывода строк в readline.
- *
- * @param str  Строка для вывода.
- */
-void ucmd_default_print(const char *str);
-
-/**
- * @brief Установка функции обработки SIGINT (Ctrl+C).
- *
- * @param sigintf  Функция обратного вызова при нажатии Ctrl+C.
- */
-void ucmd_set_sigint(void (*sigintf)(void));
-```
+Добавить документацию ко всем публичным функциям и типам (`command_t`, `command_cb`, `ucmd_default_init`, `ucmd_default_proc`, `ucmd_parse`, `ucmd_help`, `ucmd_default_print`, `ucmd_set_sigint`).
 
 ---
 
@@ -359,50 +249,26 @@ void ucmd_set_sigint(void (*sigintf)(void));
 
 Убрать строку 8 (`#include "microrl.h"` — дубль строки 7).
 
-#### 5.5.2 Вынос ucmd_mcu_reset() из модуля
+#### 5.5.2 Изоляция ucmd_mcu_reset()
 
-**Вариант А (предпочтительный):** Перенести функцию `ucmd_mcu_reset()` и связанную с ней зависимость от `stm32f407xx.h` в отдельный файл `firmware/cli/system/ucmd_system.c`:
+Функция `ucmd_mcu_reset()` напрямую использует CMSIS (`NVIC_SystemReset`). Полный перенос команды `reset` в отдельный подмодуль CLI запланирован, но выходит за рамки текущего рефакторинга.
 
-```c
-/* ucmd_system.c — CLI-команды системного управления */
-#include "stm32f407xx.h"
-#include "ucmd.h"
-
-int ucmd_mcu_reset(int argc, char **argv) {
-    (void)argc;
-    (void)argv;
-    NVIC_SystemReset();
-    return 0;  /* never reached */
-}
-```
-
-В `ucmd.c` оставить только `extern int ucmd_mcu_reset(int argc, char **argv);` и запись в таблицу команд.
-
-**Вариант Б:** Если создание нового модуля нецелесообразно — оставить функцию в ucmd.c, но явно пометить нарушением слоя с комментарием:
+**Решение (текущий цикл):** Оставить функцию рядом с основными файлами модуля с явным комментарием-исключением:
 
 ```c
 /*
- * NOTE: This function directly uses CMSIS (NVIC_SystemReset).
- * This is a controlled exception — system reset has no driver abstraction.
- * Located here temporarily until a dedicated system CLI module is created.
+ * NOTE: Controlled layer violation — this function directly uses CMSIS
+ * (NVIC_SystemReset). Planned for migration to a dedicated module
+ * in a future refactoring cycle.
  */
 #include "stm32f407xx.h"
 ```
 
 #### 5.5.3 Исправление типа ucmd_default_rx
 
-Заменить:
-```c
-static volatile uint8_t ucmd_default_rx;
-```
-На:
-```c
-static int ucmd_default_rx;
-```
+Заменить `static volatile uint8_t ucmd_default_rx;` на что-то подходящее для нового подхода с `drv_face_t` (см. 5.5.4).
 
-`volatile` не требуется (переменная используется только в main контексте, не в прерываниях). Тип `int` — требование стандарта C99 для `%c` в scanf/fscanf.
-
-#### 5.5.4 Замена scanf на неблокирующее чтение
+#### 5.5.4 Замена scanf на чтение через drv_face_t
 
 **Текущий код:**
 ```c
@@ -412,18 +278,30 @@ void ucmd_default_proc(void) {
 }
 ```
 
-**Новый код (с rate limiting):**
+**Проблема:** `scanf` — часть stdio, которая абстрагируется над драйверами. Прямое чтение из `drv_face_t` обеспечивает независимость от stdio, легкий мокинг в unit-тестах и возможность выбора любого источника ввода (UART, USB CDC).
+
+**Новый код:**
 ```c
 #include "precise_time.h"
+#include "drv_face.h"
 
-/* Rate limit: skip calls faster than 500 us (2 kHz max) */
 #define UCMD_PROC_INTERVAL_US  500
 
+static const drv_face_t *ucmd_iface;
 static uint32_t ucmd_last_stamp;
 static bool ucmd_stamp_initialized;
 
+void ucmd_default_init(void) {
+    ucmd_iface = dev_uart1_get();
+    microrl_init(&default_rl, ucmd_default_print);
+    microrl_set_execute_callback(&default_rl,
+        (int (*)(int, const char * const*))ucmd_execute);
+    microrl_set_sigint_callback(&default_rl, default_sigint);
+    microrl_insert_char(&default_rl, '\n');
+    microrl_insert_char(&default_rl, '\n');
+}
+
 void ucmd_default_proc(void) {
-    /* Rate limiting */
     if (!ucmd_stamp_initialized) {
         ucmd_last_stamp = pt_stamp();
         ucmd_stamp_initialized = true;
@@ -431,151 +309,43 @@ void ucmd_default_proc(void) {
     }
 
     uint32_t dt = pt_elapsed_us(ucmd_last_stamp);
-    if (dt < UCMD_PROC_INTERVAL_US) {
-        return;
-    }
+    if (dt < UCMD_PROC_INTERVAL_US) return;
     ucmd_last_stamp = pt_stamp();
 
-    /* Non-blocking read from stdin */
-    int ch = fgetc(stdin);
-    if (ch == EOF) {
-        return;
-    }
-    ucmd_default_rx = (uint8_t)ch;
-    microrl_insert_char(&default_rl, ucmd_default_rx);
+    uint8_t ch;
+    int ret = ucmd_iface->read(&ch, 1);
+    if (ret <= 0) return;
+    microrl_insert_char(&default_rl, ch);
 }
 ```
 
-**Примечание:** Если `fgetc(stdin)` остается блокирующим на целевой платформе, рассмотреть альтернативы:
-- Прямой вызов `uart1_read_nonblocking()` из драйвера UART
-- Чтение из кольцевого буфера, заполняемого прерыванием UART
+Убрать `setvbuf(stdin, NULL, _IONBF, 0)` из `ucmd_default_init()` — stdio больше не используется для чтения.
 
 #### 5.5.5 Исправление const-correctness в ucmd_execute
 
-**Текущий код:**
-```c
-int ucmd_execute(int argc, char **argv) {
-    int ret = 0;
-    ret = ucmd_parse(cmd_list, argc, (const char **)argv);
-```
-
-**Проблема:** `(const char **)argv` — приведение убирает квалификатор `const`, что является нарушением const-correctness и может вызывать неопределенное поведение.
-
-**Решение 1 (предпочтительное):** Изменить сигнатуру `ucmd_execute` на:
-```c
-int ucmd_execute(int argc, const char * const *argv);
-```
-
-Это согласуется с подписью callback в microrl.h:
-```c
-int (*execute)(int argc, const char * const *argv);
-```
-
-Тогда приведение не потребуется.
-
-**Решение 2:** Если изменение сигнатуры нарушает существующие обработчики — оставить как есть, но явно пометить комментарий о безопасности (так как argv никогда не модифицируется через указатель).
+Изменить сигнатуру на `int ucmd_execute(int argc, const char * const *argv);` для согласования с callback в microrl.h.
 
 #### 5.5.6 Переименование print_help_cb -> ucmd_help
 
-Для соответствия неймингу остальных CLI-модулей:
-```c
-/* Было */
-int print_help_cb(int argc, char *argv[])
-
-/* Стало */
-int ucmd_help(int argc, char *argv[])
-```
-
-Обновить все места использования (таблица команд, заголовочный файл).
-
 #### 5.5.7 Исправление вывода "unknown command"
 
-**Текущий код:**
-```c
-if(ret == UCMD_CMD_NOT_FOUND){
-    static uint8_t gssu = 0;
-    if(gssu++ < 6)  {
-      printf("unknown command");
-      for(int i = 0; i < argc; i++) {
-        printf(" %s", (char*)&argv[i][0]);
-      }
-      printf(", try help\r\n");
-    } else {
-      gssu = 0;
-      set_display_atrib(F_RED);
-      printf("GO SLEEP, STUPID USER!\r\n");
-      resetcolor();
-    }
-}
-```
-
-**Новый код:**
-```c
-if (ret == UCMD_CMD_NOT_FOUND) {
-    static uint8_t gssu = 0;
-    if (gssu++ < 6) {
-        printf("unknown command:");
-        for (int i = 0; i < argc; i++) {
-            printf(" %s", argv[i]);
-        }
-        printf(", try help\r\n");
-    } else {
-        gssu = 0;
-        set_display_atrib(F_RED);
-        printf("GO SLEEP, STUPID USER!\r\n");
-        resetcolor();
-    }
-}
-```
-
-Изменения:
-- `argv[i]` вместо `(char*)&argv[i][0]`
-- `"unknown command:"` с двоеточием вместо `, try help`
-- Форматирование по стилю проекта
+Упростить `(char*)&argv[i][0]` до `argv[i]`, добавить двоеточие после "unknown command".
 
 #### 5.5.8 Обновление таблицы команд
 
-После переименования `print_help_cb`:
-```c
-command_t cmd_list[] = {
-    {
-        .cmd  = "help",
-        .help = "print available commands with their help text",
-        .fn   = ucmd_help,
-    },
-    /* ... остальные команды ... */
-    {0}, /* Null terminator — do not remove */
-};
-```
+После переименования `print_help_cb` на `ucmd_help`.
 
 #### 5.5.9 Добавление Doxygen-комментариев
-
-Все публичные функции получить комментарии по образцу из `ucmd.h` (раздел 5.4).
 
 ---
 
 ### 5.6 `term_gxf.h`
 
-Без изменений. Атрибуция уже присутствует в существующем заголовке файла.
-
----
+Без изменений. Атрибуция уже присутствует.
 
 ### 5.7 `README`
 
-Добавить секцию о модификациях:
-
-```
-MODIFICATIONS FOR firmware-demo PROJECT
-======================================
-This copy of microrl has been significantly modified by Michael Kaa
-for the firmware-demo project (2026). Key changes include:
-- ESC sequence timeout handling (prevents parser state corruption)
-- Code style alignment with project conventions
-- Added precise_time.h integration for timing-based rate limiting
-- Fixed uninitialized fields in microrl_init()
-
-Original library credits remain with Eugene Samoylov (Helius).
-```
+Добавить секцию о модификациях для firmware-demo (ESC timeout, rate limiting, fixed init).
 
 ---
 
@@ -583,56 +353,20 @@ Original library credits remain with Eugene Samoylov (Helius).
 
 ### 6.1 Описание проблемы
 
-При быстрой последовательности вызовов `ucmd_default_proc()`, когда скорость вызовов превышает скорость поступления символов по UART, ESC-последовательности (например, `\033[A` для стрелки вверх) могут быть "разрезаны":
+При быстрой последовательности вызовов `ucmd_default_proc()`, когда скорость вызовов превышает скорость поступления символов по UART, ESC-последовательности могут быть "разрезаны":
 
 1. Приходит `\033` -> устанавливается `escape = 1`
-2. Следующий вызов `proc()` не находит нового символа и обрабатывает мусор/старое значение как продолжение ESC
-3. Парсер интерпретирует неверный символ -> теряется команда или ломается ввод
+2. Следующий вызов обрабатывает мусор/старое значение как продолжение ESC
+3. Парсер интерпретирует неверный символ
 
-### 6.2 Архитектурное решение
+### 6.2 Двухуровневая защита
 
-**Двухуровневая защита:**
+**Level 1:** Rate limiting в `ucmd_default_proc()` через `precise_time.h` (интервал 500 мкс, ~2 kHz).
 
-1. **Level 1: Rate limiting в ucmd_default_proc()** — через `precise_time.h`:
-   - Ограничить частоту обработки до ~2 kHz (интервал 500 мкс)
-   - Аналогично подходу в `pwm_led.c` (`pt_elapsed_us(led.last_stamp) < 1000`)
+**Level 2:** ESC-таймаут в `microrl_insert_char()` — при поступлении ESC установить `escape_stamp = pt_stamp()`, при следующем символе проверить таймаут.
 
-2. **Level 2: ESC-таймаут в microrl_insert_char()** — через `precise_time.h`:
-   - При поступлении ESC установить метку времени `escape_stamp = pt_stamp()`
-   - При каждом следующем символе проверить `pt_elapsed_us(escape_stamp) > _ESC_TIMEOUT_US`
-   - Если таймаут exceeded — сбросить состояние escape и обработать символ как обычный
+### 6.3 Зависимости
 
-### 6.3 Диаграмма состояний ESC-парсера
-
-```
-          ESC приходит
-              │
-              ▼
-        ┌─────────────┐
-        │  escape=1    │←── установка escape_stamp
-        │  waiting...  │
-        └───────┬─────┘
-                │
-         ┌──────┴──────┐
-         │             │
-    символ           таймаут
-    пришел          (>500 мкс)
-         │             │
-         ▼             ▼
-   escape_process()  сброс escape=0
-         │           обработка как
-    ┌────┴────┐      обычный символ
-    │         │
- завершён  ждём ещё
-    │         │
-    ▼         ▼
- сброс   продолжение
- escape  парсинга
-```
-
-### 6.4 Зависимости
-
-Для реализации используются:
 - `firmware/core/lib/time/precise_time.h` — функции `pt_stamp()`, `pt_elapsed_us()`
 - Требуется предварительный вызов `pt_init()` в startup-коде
 
@@ -642,39 +376,37 @@ Original library credits remain with Eugene Samoylov (Helius).
 
 | Функция / тип | Было | Стало | Совместимость |
 |--------------|------|-------|---------------|
-| `print_help_cb(int, char**)` | свободная функция | переименована в `ucmd_help(int, char**)` |Breaking — обновить таблицу команд |
-| `ucmd_execute(int argc, char **argv)` | argv без const | `ucmd_execute(int argc, const char * const *argv)` | Breaking — согласование с microrl callback |
-| структура `microrl_t` | полей escape_stamp нет | добавлено `uint32_t escape_stamp` (под `#ifdef _USE_ESC_SEQ`) | Binary compatible — поле в конце блока #ifdef |
-| `ucmd_default_proc()` | блокирующий scanf + без rate limiting | неблокирующее чтение + rate limiting (500 мкс) | Compatible — сигнатура не изменилась |
-| `_ESC_TIMEOUT_US` | не существует | новое макроопределение в config.h | N/A |
+| `print_help_cb(int, char**)` | свободная функция | `ucmd_help(int, char**)` | Breaking |
+| `ucmd_execute(int argc, char **argv)` | argv без const | `const char * const *argv` | Breaking |
+| структура `microrl_t` | нет escape_stamp | добавлено `uint32_t escape_stamp` | Binary compatible |
+| `ucmd_default_proc()` | scanf + без rate limiting | `drv_face_t->read()` + rate limiting | Compatible |
+| `_ESC_TIMEOUT_US` | не существует | новое макроопределение | N/A |
 
 ---
 
 ## 8. Порядок выполнения работ
 
-| Этап | Описание | Файлы | Оценка сложности |
-|------|----------|-------|-----------------|
+| Этап | Описание | Файлы | Сложность |
+|------|----------|-------|-----------|
 | 1 | Атрибуция авторов | microrl.c, microrl.h, config.h, README | Низкая |
 | 2 | Исправление ucmd.c | ucmd.c, ucmd.h | Средняя |
-| 3 | Рефакторинг microrl (инициализация, stdlib) | microrl.c, microrl.h | Низкая |
-| 4 | ESC-таймаут через precise_time.h | microrl.c, microrl.h, config.h | Средняя |
-| 5 | Rate limiting в ucmd_default_proc() | ucmd.c | Средняя |
+| 3 | Рефакторинг microrl | microrl.c, microrl.h | Низкая |
+| 4 | ESC-таймаут + precise_time.h | microrl.c, microrl.h, config.h | Средняя |
+| 5 | drv_face_t + rate limiting | ucmd.c | Средняя |
 | 6 | Стилистика (Doxygen, нейминг) | все файлы модуля | Низкая |
-| 7 | Сборка и проверка без варнингов | — | — |
+| 7 | Сборка и проверка | — | — |
 
 ---
 
 ## 9. Критерии приемки
 
-Результат рефакторинга считается удовлетворительным, если выполнены все условия:
-
-1. **Сборка** — проект собирается без предупреждений при `-Wall -Wextra -pedantic`
-2. **Атрибуция** — все файлы на basis стороннего кода содержат заголовок с указанием оригинального автора
-3. **Изоляция слоев** — `stm32f407xx.h` не подключается из файлов app-слоя (за исключением контролируемых исключений с явными комментариями)
-4. **ESC-таймаут** — при отправке ESC-последовательностей с паузой > 500 мкс между символами состояние парсера корректно сбрасывается
-5. **Rate limiting** — `ucmd_default_proc()` пропускает вызовы чаще 2 kHz без потери данных
-6. **Стилистика** — все публичные API документированы через Doxygen, нейминг соответствует snake_case проекта
-7. **Функциональность** — все существующие команды CLI продолжают работать (`help`, `reset`, `mem`, `time`, `led`, `w25q`, `usb`, `adc`)
+1. **Сборка** — без предупреждений при `-Wall -Wextra -pedantic`
+2. **Атрибуция** — все файлы на basis стороннего кода содержат заголовок автора
+3. **Изоляция слоев** — CMSIS не подключается из app-слоя (за исключением контролируемых исключений)
+4. **ESC-таймаут** — корректный сброс состояния парсера при паузе > 500 мкс
+5. **Rate limiting** — пропуск вызовов чаще 2 kHz без потери данных
+6. **Стилистика** — Doxygen, snake_case
+7. **Функциональность** — все команды CLI работают (`help`, `reset`, `mem`, `time`, `led`, `w25q`, `usb`, `adc`)
 
 ---
 
@@ -683,16 +415,81 @@ Original library credits remain with Eugene Samoylov (Helius).
 | Риск | Вероятность | Влияние | Мера снижения |
 |------|-----------|---------|--------------|
 | Изменение сигнатуры callback нарушит другие модули CLI | Средняя | Высокое | Тщательная проверка всех extern объявлений |
-| precise_time.h не инициализирован при первом вызове | Низкая | Критическое | Добавление assert/проверки в ucmd_default_init() |
-| Rate limiting потеряет символы при пиковой нагрузке | Низкая | Среднее | Символы буферизуются драйвером UART — потери не будут |
-| ESC-таймаут 500 мкс слишком мал/велик для медленного/быстрого UART | Средняя | Среднее | Значение настраивается через config.h, можно адаптировать |
+| Rate limiting потеряет символы при пиковой нагрузке | Низкая | Среднее | Символы буферизуются драйвером UART — потерь не будет |
+| ESC-таймаут 500 мкс слишком мал/велик | Средняя | Среднее | Значение настраивается через config.h |
 
 ---
 
-## 11. Пасхалка: «GO SLEEP, STUPID USER!»
+## 11. Unit-тесты
 
-В функции `ucmd_execute()` присутствует сообщение-пасхалка, выводимое при повторном вводе
-неизвестных команд (после 6 попыток):
+### 11.1 Цели
+
+После рефакторинга модуль должен быть тестируем на хосте (gcc x86_64) без зависимости от CMSIS. Тесты покрывают:
+
+- Парсинг ESC-последовательностей (стрелки, Home, End)
+- ESC-таймаут (сброс состояния при паузе > `_ESC_TIMEOUT_US`)
+- Историю команд (Up/Down, кольцевой буфер, переполнение)
+- Разбиение строки на токены (split)
+- Обработку спецсимволов (^A, ^E, ^U, ^K, Backspace, Delete)
+- Автодополнение (Tab)
+- Rate limiting в `ucmd_default_proc()`
+
+### 11.2 Инфраструктура
+
+Тесты располагаются в `firmware/core/tests/cli/u_read_line/` с использованием:
+
+- Unity framework (`firmware/core/tests/unity/`)
+- Существующих стубов (`test_helpers/stubs.h`, `cmsis_stubs.h`)
+- Мокинг `drv_face_t` для подмены источника ввода и перехвата вывода
+
+### 11.3 Мокинг через drv_face_t
+
+Переход на `drv_face_t` позволяет полностью изолировать microrl от железа:
+
+```c
+static uint8_t mock_rx_buf[256];
+static size_t mock_rx_pos;
+static char mock_tx_buf[1024];
+static size_t mock_tx_len;
+
+static int mock_read(void *buf, size_t len) {
+    if (mock_rx_pos >= sizeof(mock_rx_buf)) return 0;
+    memcpy(buf, &mock_rx_buf[mock_rx_pos++], 1);
+    return 1;
+}
+
+static const drv_face_t mock_iface = {
+    .read  = mock_read,
+    .write = NULL,
+    .ioctl = NULL
+};
+```
+
+### 11.4 Ключевые тест-кейсы
+
+| Тест | Описание | Приоритет |
+|------|----------|-----------|
+| `test_esc_arrow_up` | `ESC+[A` вызывает навигацию по истории (Up) | Высокий |
+| `test_esc_arrow_down` | `ESC+[B` вызывает навигацию по истории (Down) | Высокий |
+| `test_esc_home_end` | `ESC+[7~` / `ESC+[8~` перемещают курсор | Высокий |
+| `test_esc_timeout_reset` | При паузе >500 мкс после ESC символ обрабатывается как обычный | Высокий |
+| `test_split_tokens` | `split()` корректно разделяет строку на токены | Высокий |
+| `test_history_ring_wrap` | Кольцевой буфер переполняется без потери данных | Средний |
+| `test_backspace_at_start` | Backspace в начале строки не ломает курсор | Средний |
+| `test_ctrl_u_clear` | ^U очищает всю строку | Средний |
+| `test_exec_callback` | При Enter вызывается callback с правильными аргументами | Высокий |
+
+### 11.5 Интеграция в Makefile
+
+- Расширить паттерн в `firmware/core/tests/Makefile` на `cli/u_read_line/test_*.c`
+- Добавить `-I../../cli/u_read_line` в INCLUDES
+- Ссылать стубы printf/fgetc из test_helpers
+
+---
+
+## 12. Пасхалка: «GO SLEEP, STUPID USER!»
+
+В функции `ucmd_execute()` присутствует сообщение-пасхалка, выводимое при повторном вводе неизвестных команд (после 6 попыток):
 
 ```c
 set_display_atrib(F_RED);
@@ -700,15 +497,9 @@ printf("GO SLEEP, STUPID USER!\r\n");
 resetcolor();
 ```
 
-**Происхождение:** строка является отсылкой к прошивке *Evo Reset Service* — сервисному меню
-ZX-совместимого компьютера **ZX-Evolution (Pentevo)** от группы разработчиков NedoPC.
-В оригинале сообщение выводилось как ироничная критическая ошибка при некорректных
-действиях пользователя в интерфейсе.
-
-Сохранился как локальный мем сообщества ретро-разработчиков и оставлен в коде намеренно.
+**Происхождение:** отсылка к прошивке *Evo Reset Service* — сервисному меню ZX-совместимого компьютера **ZX-Evolution (Pentevo)** от группы разработчиков NedoPC.
 
 **Источник:** <http://forum.nedopc.com/viewtopic.php?f=33&t=861&start=40>
 **Источник:** <https://hermitlair.ucoz.com/blog/2017-07-14-937>
 
-**Решение:** оставить без изменений — сообщение не влияет на функциональность и является
-культурным артефактом проекта.
+**Решение:** оставить без изменений — сообщение не влияет на функциональность и является культурным артефактом проекта.
