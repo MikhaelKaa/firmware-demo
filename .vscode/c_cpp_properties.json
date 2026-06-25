@@ -1,0 +1,46 @@
+// ВАЖНО: includePath для "Linux" составлен явно (без глобального firmware/**/**),
+// чтобы тестовые заглушки из firmware/core/tests/test_helpers/ не перекрывали
+// реальные CMSIS-заголовки. Это временное решение - в будущем требуется
+// отдельная конфигурация для хост-компиляции тестов (например, через tasks.json
+// или профиль CMake/Makefile с собственными флагами -I).
+{
+    "configurations": [
+        {
+            "name": "Linux",
+            "compilerPath": "/usr/bin/arm-none-eabi-gcc",
+            "includePath": [
+                "/usr/include/newlib",
+                "${workspaceFolder}/firmware/core/vendor/CMSIS",
+                "${workspaceFolder}/firmware/core/drivers/**",
+                "${workspaceFolder}/firmware/core/kernel/**",
+                "${workspaceFolder}/firmware/core/lib/**",
+                "${workspaceFolder}/firmware/cli/**",
+                "${workspaceFolder}/firmware/app/**"
+            ],
+            "defines": [
+                "STM32F407xx",
+                "BAREMETAL",
+                "SYSTEM_CORE_CLOCK=168000000U"
+            ],
+            "cStandard": "c99",
+            "cppStandard": "c++11",
+            "intelliSenseMode": "linux-gcc-arm"
+        },
+        {
+            "name": "Win",
+            "includePath": [
+                "C:/arm_tool/gcc/arm-none-eabi/include",
+                "${workspaceFolder}/**"
+            ],
+            "defines": [
+                "BAREMETAL",
+                "STM32F407xx"
+            ],
+            "compilerPath": "C:/arm_tool/gcc/bin/arm-none-eabi-gcc.exe",
+            "cStandard": "c99",
+            "cppStandard": "gnu++11",
+            "intelliSenseMode": "${default}"
+        }
+    ],
+    "version": 4
+}
