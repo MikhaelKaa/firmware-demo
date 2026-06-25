@@ -7,28 +7,28 @@ Microrl library is designed to help implement command line interface in small an
 
 2. FEATURE
 
-	** config.h file
-	 - Turn on/off feature for add functional/decrease memory via config files.
+  ** config.h file
+   - Turn on/off feature for add functional/decrease memory via config files.
 
-	** hot keys support
-	 - backspace, cursor arrow, HOME, END keys
-	 - Ctrl+U (cut line from cursor to begin) 
-	 - Ctrl+K (cut line from cursor to end) 
-	 - Ctrl+A (like HOME) 
-	 - Ctrl+E (like END)
-	 - Ctrl+H (like backspace)
-	 - Ctrl+B (like cursor arrow left) 
-	 - Ctrl+F (like cursor arrow right)
-	 - Ctrl+P (like cursor arrow up)
-	 - Ctrl+N (like cursor arrow down)
-	 - Ctrl+R (retype prompt and partial command)
-	 - Ctrl+C (call 'sigint' callback, only for embedded system)
+  ** hot keys support
+   - backspace, cursor arrow, HOME, END keys
+   - Ctrl+U (cut line from cursor to begin)
+   - Ctrl+K (cut line from cursor to end)
+   - Ctrl+A (like HOME)
+   - Ctrl+E (like END)
+   - Ctrl+H (like backspace)
+   - Ctrl+B (like cursor arrow left)
+   - Ctrl+F (like cursor arrow right)
+   - Ctrl+P (like cursor arrow up)
+   - Ctrl+N (like cursor arrow down)
+   - Ctrl+R (retype prompt and partial command)
+   - Ctrl+C (call 'sigint' callback, only for embedded system)
 
-	** history
-	 - Static ring buffer history for memory saving. Number of commands saved to history depends from commands length and buffer size (defined in config)
+  ** history
+   - Static ring buffer history for memory saving. Number of commands saved to history depends from commands length and buffer size (defined in config)
 
-	** completion
-	 - via completion callback
+  ** completion
+   - via completion callback
 
 
 3. SRC STRUCTURE
@@ -48,7 +48,7 @@ examples/        - library usage examples
 
 4. INSTALL
 
-Requirements: C compiler with support for C99 standard (GNU GCC, Keil, IAR) with standard C library (libc, uClibc or other compatible). Also you have to implement several routines in your own code for library to work. 
+Requirements: C compiler with support for C99 standard (GNU GCC, Keil, IAR) with standard C library (libc, uClibc or other compatible). Also you have to implement several routines in your own code for library to work.
 NOTE: need add -std=gnu99 arg for gcc
 
 For embed lib to you project, you need to do few simple steps:
@@ -65,9 +65,9 @@ For example on linux PC print callback may be:
 
 c) Call 'microrl_set_execute_callback' with pointer to you routine, what will be called if user press enter in terminal. Execute callback give a 'argc', 'argv' parametrs, like 'main' func in application. All token in 'argv' is null terminated. So you can simply walk through argv and handle commands.
 
-d) If you want completion support if user press TAB key, call 'microrl_set_complete_callback' and set you callback. It also give 'argc' and 'argv' arguments, so iterate through it and return set of complete variants. 
+d) If you want completion support if user press TAB key, call 'microrl_set_complete_callback' and set you callback. It also give 'argc' and 'argv' arguments, so iterate through it and return set of complete variants.
 
-e) Look at 'config.h' file, for tune library for you requiring. 
+e) Look at 'config.h' file, for tune library for you requiring.
 
 f) Now you just call 'microrl_insert_char' on each char received from input stream (usart, network, etc).
 
@@ -87,10 +87,10 @@ Example of code:
 		microrl_set_complete_callback (prl, complet);
 		// set callback for ctrl+c handling (optionally)
 		microrl_set_sigint_callback (prl, sigint);
-		
+
 		while (1) {
 			// put received char from stdin to microrl lib
-			char ch = get_char ();
+			char ch = get_char();
 			microrl_insert_char (prl, ch);
 		}
 		return 0;
@@ -99,6 +99,33 @@ Example of code:
 See examples library usage.
 
 
+5. MODIFICATIONS FOR FIRMWARE-DEMO
 
-Author: Eugene Samoylov aka Helius (ghelius@gmail.com) 
-01.09.2011
+The following changes were made for integration into the firmware-demo project:
+
+  - ESC Timeout: Added _ESC_TIMEOUT_US (500 us) to prevent escape-sequence parser
+    from getting stuck when characters arrive out of sync. If an incomplete ESC
+    sequence is not finished within this interval, the state is reset and the
+    pending character is processed as a normal printable character.
+
+  - drv_face_t Integration: Replaced stdio-based input (scanf) with direct
+    reads through the drv_face_t interface, enabling input from any configured
+    device (UART1, USB CDC, etc.) without depending on stdio.
+
+  - Fixed Init: All fields of microrl_t are now properly initialized in
+    microrl_init(), including escape_seq, escape, escape_stamp, and tmpch,
+    eliminating uninitialized-variable warnings.
+
+  - Standard Headers: Replaced manual true/false definitions with <stdbool.h>,
+    added <stdint.h> for uint32_t used in the ESC-timestamp field.
+
+  - Doxygen Comments: Public API functions now have Doxygen-compatible
+    documentation blocks.
+
+  - stdio Buffering: Both stdin and stdout are set to unbuffered mode (_IONBF)
+    in ucmd_default_init() to ensure immediate echo output.
+
+
+Author: Eugene Samoylov aka Helius (ghelius@gmail.com)
+Modified by: Michael Kaa
+01.09.2011 / updated 2026-06-25
