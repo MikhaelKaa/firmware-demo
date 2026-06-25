@@ -15,7 +15,8 @@
                 "${workspaceFolder}/firmware/core/kernel/**",
                 "${workspaceFolder}/firmware/core/lib/**",
                 "${workspaceFolder}/firmware/cli/**",
-                "${workspaceFolder}/firmware/app/**"
+                "${workspaceFolder}/firmware/app/**",
+                "${workspaceFolder}/firmware/core/lib/time"
             ],
             "defines": [
                 "STM32F407xx",
