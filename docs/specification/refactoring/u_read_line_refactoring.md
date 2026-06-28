@@ -276,9 +276,9 @@ case KEY_ESC:
 
 Заменить `static volatile uint8_t ucmd_default_rx;` на что-то подходящее для нового подхода с `drv_face_t` (см. 5.5.4).
 
-#### 5.5.4 Замена scanf на чтение через drv_face_t
+#### 5.5.4 Замена scanf на чтение через drv_face_t [ВЫПОЛНЕНО]
 
-**Текущий код:**
+**Было:**
 ```c
 void ucmd_default_proc(void) {
     scanf("%c", &ucmd_default_rx);
@@ -288,18 +288,16 @@ void ucmd_default_proc(void) {
 
 **Проблема:** `scanf` — часть stdio, которая абстрагируется над драйверами. Прямое чтение из `drv_face_t` обеспечивает независимость от stdio, легкий мокинг в unit-тестах и возможность выбора любого источника ввода (UART, USB CDC).
 
-**Новый код:**
+**Стало:**
 ```c
 #include "precise_time.h"
 #include "drv_face.h"
 
-#define UCMD_PROC_INTERVAL_US  500
-
 static const drv_face_t *ucmd_iface;
-static uint32_t ucmd_last_stamp;
-static bool ucmd_stamp_initialized;
 
 void ucmd_default_init(void) {
+    setvbuf(stdin, NULL, _IONBF, 0);   // оставлено — см. примечание ниже
+    setvbuf(stdout, NULL, _IONBF, 0);  // оставлено — см. примечание ниже
     ucmd_iface = dev_uart1_get();
     microrl_init(&default_rl, ucmd_default_print);
     microrl_set_execute_callback(&default_rl,
@@ -310,16 +308,6 @@ void ucmd_default_init(void) {
 }
 
 void ucmd_default_proc(void) {
-    if (!ucmd_stamp_initialized) {
-        ucmd_last_stamp = pt_stamp();
-        ucmd_stamp_initialized = true;
-        return;
-    }
-
-    uint32_t dt = pt_elapsed_us(ucmd_last_stamp);
-    if (dt < UCMD_PROC_INTERVAL_US) return;
-    ucmd_last_stamp = pt_stamp();
-
     uint8_t ch;
     int ret = ucmd_iface->read(&ch, 1);
     if (ret <= 0) return;
@@ -327,7 +315,9 @@ void ucmd_default_proc(void) {
 }
 ```
 
-Убрать `setvbuf(stdin, NULL, _IONBF, 0)` из `ucmd_default_init()` — stdio больше не используется для чтения.
+**Примечание:** `setvbuf(stdin/stdout, NULL, _IONBF, 0)` оставлено осознанно и НЕ должно быть удалено:
+- `stdout` используется для вывода (printf в ucmd_default_print и всех CLI-командах) — без `_IONBF` вывод будет буферизироваться с задержками отображения echo и сообщений.
+- `stdin` не используется microrl напрямую, но отключение его буферизации гарантирует предсказуемое поведение терминала при использовании stdio другими модулями системы (syscalls, перенаправление потока и т.д.).
 
 #### 5.5.5 Исправление const-correctness в ucmd_execute
 
