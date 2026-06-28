@@ -5,90 +5,16 @@
 #include <stdio.h>
 #include <stdint.h>
 
-#include "term_gxf.h"
 #include "ucmd.h"
 #include "microrl.h"
 #include "drv_face.h"
 #include "uart.h"
 
-#include "memory_man.h"
-#include "ucmd_time.h"
-#include "ucmd_led.h"
-#include "ucmd_w25q.h"
-#include "ucmd_adc.h"
-
 /* ------------------------------------------------------------------ */
-/* External declarations                                              */
+/* Command table (external, set via ucmd_default_init_with_commands)   */
 /* ------------------------------------------------------------------ */
 
-extern int ucmd_usb(int argc, char *argv[]);
-
-/* ------------------------------------------------------------------ */
-/* MCU reset command (Controlled layer violation)                      */
-/* ------------------------------------------------------------------ */
-/*
- * NOTE: Controlled layer violation — this function directly uses CMSIS
- * (NVIC_SystemReset). Planned for migration to a dedicated module
- * in a future refactoring cycle.
- */
-#include "stm32f407xx.h"
-
-static int ucmd_mcu_reset(int argc, char *argv[])
-{
-    (void)argc;
-    (void)argv;
-
-    NVIC_SystemReset();
-    return 0; /* never reached, silences compiler warning */
-}
-
-/* ------------------------------------------------------------------ */
-/* Command table                                                      */
-/* ------------------------------------------------------------------ */
-
-static command_t cmd_list[] = {
-    {
-        .cmd  = "help",
-        .help = "print available commands with their help text",
-        .fn   = (command_cb)ucmd_help,
-    },
-    {
-        .cmd  = "reset",
-        .help = "reset mcu",
-        .fn   = (command_cb)ucmd_mcu_reset,
-    },
-    {
-        .cmd  = "mem",
-        .help = "memory man, use mem help",
-        .fn   = (command_cb)ucmd_mem,
-    },
-    {
-        .cmd  = "time",
-        .help = "rtc time. to set type time hh mm ss",
-        .fn   = (command_cb)ucmd_time,
-    },
-    {
-        .cmd  = "led",
-        .help = "led PA1 ctrl",
-        .fn   = (command_cb)ucmd_led,
-    },
-    {
-        .cmd  = "w25q",
-        .help = "w25q ctrl",
-        .fn   = (command_cb)ucmd_w25q,
-    },
-    {
-        .cmd  = "usb",
-        .help = "usb commands, use 'usb help'",
-        .fn   = (command_cb)ucmd_usb,
-    },
-    {
-        .cmd  = "adc",
-        .help = "adc commands, use 'adc help'",
-        .fn   = (command_cb)ucmd_adc,
-    },
-    {0}, /* null list terminator — DO NOT REMOVE */
-};
+static const command_t *g_cmd_table = NULL;
 
 /* ------------------------------------------------------------------ */
 /* Command parsing                                                    */
@@ -129,6 +55,33 @@ static microrl_t          default_rl;
 static const drv_face_t  *ucmd_iface;
 
 /* ------------------------------------------------------------------ */
+ /* Print callback adapter (printf-based, for backward compatibility)  */
+/* ------------------------------------------------------------------ */
+
+/** @brief Default microrl print callback (delegates to printf). */
+void ucmd_default_print(const char *str)
+{
+    printf("%s", str);
+}
+
+/** @brief Microrl print callback with void* ctx (ignores ctx, uses printf). */
+static void ucmd_default_print_ctx(const char *str, void *ctx)
+{
+    (void)ctx;
+    printf("%s", str);
+}
+
+/* ------------------------------------------------------------------ */
+/* Init with external command table                                   */
+/* ------------------------------------------------------------------ */
+
+void ucmd_default_init_with_commands(const command_t *commands)
+{
+    g_cmd_table = commands;
+    ucmd_default_init();
+}
+
+/* ------------------------------------------------------------------ */
 /* Command execution callback                                         */
 /* ------------------------------------------------------------------ */
 
@@ -146,7 +99,8 @@ static const drv_face_t  *ucmd_iface;
  */
 static int ucmd_execute(int argc, char **argv)
 {
-    int ret = ucmd_parse(cmd_list, argc, (const char **)argv);
+    if (g_cmd_table == NULL) return -1;
+    int ret = ucmd_parse((command_t *)g_cmd_table, argc, (const char **)argv);
 
     if (ret == UCMD_CMD_NOT_FOUND) {
         static uint8_t gssu = 0;
@@ -158,9 +112,7 @@ static int ucmd_execute(int argc, char **argv)
             printf(", try help\r\n");
         } else {
             gssu = 0;
-            set_display_atrib(F_RED);
-            printf("GO SLEEP, STUPID USER!\r\n");
-            resetcolor();
+            printf("\033[31mGO SLEEP, STUPID USER!\033[0m\r\n");
         }
     }
 
@@ -177,22 +129,9 @@ int ucmd_help(int argc, char *argv[])
     (void)argc;
     (void)argv;
 
-    command_t *p = cmd_list;
-    while (p->cmd) {
-        printf("%s \t%s\r\n", p->cmd, p->help);
-        p++;
-    }
-    return 0;
-}
-
-/* ------------------------------------------------------------------ */
-/* Print callback                                                     */
-/* ------------------------------------------------------------------ */
-
-/** @brief Default microrl print callback (delegates to printf). */
-void ucmd_default_print(const char *str)
-{
-    printf("%s", str);
+    /* Round 2: delegate to instance-based help via g_current_cli */
+    extern int ucmd_help_compat(int argc, char *argv[]);
+    return ucmd_help_compat(argc, argv);
 }
 
 /* ------------------------------------------------------------------ */
@@ -211,12 +150,15 @@ static void default_sigint(void)
 /** @brief Initialize the default CLI handler. */
 void ucmd_default_init(void)
 {
+    /* Require external command table to be set */
+    if (g_cmd_table == NULL) return;
+
     /* Disable stdio buffering so echo and input work correctly */
     setvbuf(stdin, NULL, _IONBF, 0);
     setvbuf(stdout, NULL, _IONBF, 0);
 
     ucmd_iface = dev_uart1_get();
-    microrl_init(&default_rl, ucmd_default_print);
+    microrl_init(&default_rl, ucmd_default_print_ctx, NULL);
     microrl_set_execute_callback(&default_rl,
                                  (int (*)(int, const char * const *))ucmd_execute);
     microrl_set_sigint_callback(&default_rl, default_sigint);

@@ -21,7 +21,9 @@ sinclude ./local.mk
 #
 C_SOURCES += cli/u_read_line/microrl.c
 C_SOURCES += cli/u_read_line/ucmd.c
+C_SOURCES += cli/u_read_line/cli.c
 C_INCLUDES += -Icli/u_read_line
+C_SOURCES += core/kernel/fault_handlers.c
 
 # CLI memory viewer
 C_SOURCES += cli/mem/memory_man.c
@@ -49,6 +51,17 @@ C_INCLUDES += -Icli/usb_cdc
 # CLI adc
 C_SOURCES += cli/adc/ucmd_adc.c
 C_INCLUDES += -Icli/adc
+
+# CLI reset
+C_SOURCES += cli/reset/ucmd_reset.c
+C_INCLUDES += -Icli/reset
+
+# App layer (CLI setup)
+C_SOURCES += app/cli_setup.c
+C_INCLUDES += -Iapp
+
+# termgfx library (ANSI escape helpers)
+C_INCLUDES += -Ilib/termgfx
 
 #######################################
 # binaries

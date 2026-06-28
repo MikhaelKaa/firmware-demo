@@ -62,8 +62,9 @@ const drv_face_t *mock_iface_get(void)
 char    mock_print_buffer[4096];
 size_t  mock_print_len;
 
-void mock_print(const char *str)
+void mock_print(const char *str, void *ctx)
 {
+    (void)ctx;
     if (!str) return;
     size_t len = strlen(str);
     if (mock_print_len + len < sizeof(mock_print_buffer)) {

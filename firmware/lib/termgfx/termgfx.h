@@ -1,5 +1,5 @@
 /*
- * term_gfx.h — упрощённая работа с ANSI-escape последовательностями в терминале.
+ * termgfx.h — упрощённая работа с ANSI-escape последовательностями в терминале.
  *
  * Автор оригинальной идеи: Zefick (Habr)
  * Статья: «Терминальная графика» (Когда printf — мало, а ncurses — много)
@@ -10,14 +10,14 @@
  * Используется в моём проекте с сохранением ссылки на первоисточник.
  * Лицензия автором не объявлена, поэтому код предоставляется "как есть".
  */
-#ifndef __TERM_GFX__
-#define __TERM_GFX__
+#ifndef _TERMGFX_H_
+#define _TERMGFX_H_
 
 #include <stdio.h>
 
 #define ESC "\033"
 
-//Format text
+// Format text
 #define TG_RESET 		0
 #define BRIGHT 		1
 #define DIM			2
@@ -26,7 +26,7 @@
 #define REVERSE		5
 #define HIDDEN		6
 
-//Foreground Colours (text)
+// Foreground Colours (text)
 
 #define F_BLACK 	30
 #define F_RED		31
@@ -37,7 +37,7 @@
 #define F_CYAN		36
 #define F_WHITE		37
 
-//Background Colours
+// Background Colours
 #define B_BLACK 	40
 #define B_RED		41
 #define B_GREEN		42
@@ -47,12 +47,12 @@
 #define B_CYAN		46
 #define B_WHITE		47
 
-#define home() 			printf(ESC "[H") //Move cursor to the indicated row, column (origin at 1,1)
-#define clrscr()		printf(ESC "[2J") //lear the screen, move to (1,1)
+#define home() 			printf(ESC "[H")
+#define clrscr()		printf(ESC "[2J")
 #define gotoxy(x,y)		printf(ESC "[%d;%dH", y, x);
 #define visible_cursor() printf(ESC "[?251");
-//Set Display Attribute Mode	<ESC>[{attr1};...;{attrn}m
+// Set Display Attribute Mode <ESC>[{attr1};...;{attrn}m
 #define resetcolor() printf(ESC "[0m")
 #define set_display_atrib(color) 	printf(ESC "[%dm",color)
 
-#endif /*__TERM_GFX__*/
+#endif /* _TERMGFX_H_ */

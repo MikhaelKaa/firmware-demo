@@ -49,8 +49,9 @@ extern size_t mock_print_len;
 /**
  * @brief Моковая функция print для microrl.
  * @param str  Нуль-терминированная строка для записи.
+ * @param ctx  Контекст (игнорируется в тестовом моке).
  */
-void mock_print(const char *str);
+void mock_print(const char *str, void *ctx);
 
 /**
  * @brief Сбросить буфер захвата вывода.

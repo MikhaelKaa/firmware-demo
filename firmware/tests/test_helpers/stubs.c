@@ -11,6 +11,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include "cmsis_stubs.h"
 #include "stubs.h"
 
@@ -67,3 +68,8 @@ void hardware_panic(const char *file, int line, const char *reason)
     fprintf(stderr, "PANIC at %s:%d - %s\n", file, line, reason);
     abort();
 }
+
+/* ------------------------------------------------------------------ */
+/* Моки для microrl print/execute callback'ов                          */
+/* ------------------------------------------------------------------ */
+/* Реализация mock_print/mock_execute находится в mock_drv_face.c.     */

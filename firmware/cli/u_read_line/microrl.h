@@ -101,7 +101,8 @@ typedef struct {
     int  cursor;              /**< input cursor position                   */
     int (*execute)(int argc, const char * const *argv);    /**< execute callback      */
     char **(*get_completion)(int argc, const char * const *argv); /**< completion callback */
-    void (*print)(const char *);                               /**< print callback        */
+    void (*print)(const char *, void *ctx);                 /**< print callback        */
+    void *print_ctx;                                             /**< context for print */
 #ifdef _USE_CTLR_C
     void (*sigint)(void);    /**< Ctrl+C handler                        */
 #endif
@@ -111,8 +112,9 @@ typedef struct {
  * @brief Initialize microrl internal data (call once at startup).
  * @param pThis  Pointer to microrl context.
  * @param print  Callback function for outputting strings to terminal.
+ * @param ctx    User context passed to the print callback.
  */
-void microrl_init(microrl_t *pThis, void (*print)(const char *));
+void microrl_init(microrl_t *pThis, void (*print)(const char *, void *ctx), void *ctx);
 
 /**
  * @brief Set echo mode (true/false), used for disabling echo (e.g., password).

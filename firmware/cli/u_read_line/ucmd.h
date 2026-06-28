@@ -86,4 +86,14 @@ void ucmd_default_print(const char *str);
  */
 void ucmd_set_sigint(void (*sigintf)(void));
 
+/**
+ * @brief Initialize the default CLI handler with an external command table.
+ *
+ * Sets up the internal microrl instance, registers execute and SIGINT
+ * callbacks, and prints an initial prompt. Call once during startup.
+ *
+ * @param commands  Pointer to a NULL-terminated array of command_t.
+ */
+void ucmd_default_init_with_commands(const command_t *commands);
+
 #endif /* _UCMD_H_ */

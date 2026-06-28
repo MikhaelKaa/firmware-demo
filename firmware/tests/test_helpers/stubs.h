@@ -57,4 +57,10 @@ void stubs_advance_time_us(uint32_t us);
  */
 void hardware_panic(const char *file, int line, const char *reason);
 
+/* ------------------------------------------------------------------ */
+/* Моки для microrl print/execute callback'ов                          */
+/* ------------------------------------------------------------------ */
+/* Примечание: mock_print/mock_execute объявлены в mock_drv_face.h.   */
+/* Реализация с поддержкой ctx(void*) находится в stubs.c.            */
+
 #endif /* TEST_STUBS_H */

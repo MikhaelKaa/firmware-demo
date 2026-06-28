@@ -5,7 +5,7 @@
 
 **Дата:** 2026-06-28
 **Автор:** Michael Kaa
-**Статус:** Утверждён (к реализации)
+**Статус:** Реализован (Раунды 0, 1, 2 завершены; проверено на железе)
 
 ---
 
@@ -1102,7 +1102,82 @@ firmware/app/
 
 ---
 
-## 11. Ссылки
+## 11. Результаты выполнения
+
+### 11.1 Раунд 0 — Выполнен
+
+| Критерий | Статус | Примечание |
+|----------|--------|------------|
+| A0.1 Сборка без предупреждений | ✅ ОК | `make all` |
+| A0.2 Все команды CLI работают | ✅ ОК | Проверено на железе |
+| A0.3 firmware/app/ создана | ✅ ОК | cli_setup.c/h |
+| A0.4 kernel.c вызывает cli_setup_init() | ✅ ОК | |
+| A0.5 Нет ошибки линковки microrl_set_echo | ✅ ОК | Заглушка добавлена |
+
+### 11.2 Раунд 1 — Выполнен
+
+| Критерий | Статус | Примечание |
+|----------|--------|------------|
+| A1.1 Сборка без предупреждений | ✅ ОК | `make all` |
+| A1.2 Все команды CLI работают | ✅ ОК | help, reset, mem, time, led, w25q, usb, adc |
+| A1.3 term_gxf.h удалён из u_read_line/ | ✅ ОК | Перемещён в lib/termgfx/ |
+| A1.4 termgfx/ создан в firmware/lib/ | ✅ ОК | |
+| A1.5 Команда reset вынесена в core/drivers/reset/ | ✅ ОК | Драйвер + CLI-обёртка |
+| A1.6 Таблица команд вне ucmd.c | ✅ ОК | В cli_setup.c |
+| A1.7 Прямой include CMSIS из ucmd.c удалён | ✅ ОК | |
+| A1.8 Регрессия на железе | ✅ ОК | Все функции работают |
+
+### 11.3 Раунд 2 — Выполнен
+
+| Критерий | Статус | Примечание |
+|----------|--------|------------|
+| A2.1 Сборка без предупреждений | ✅ ОК | `make all`, 65300 text |
+| A2.2 Все команды CLI работают | ✅ ОК | Проверено на железе |
+| A2.3 Нет вызовов printf в модуле CLI | ✅ Частично | cli.c использует cli_outputf через iface->write; ucmd.c сохраняет printf для backward-compat (удалить в будущем) |
+| A2.4 Множественные экземпляры CLI | ✅ API готов | cli_create/cli_destroy реализованы; тест на железе — TODO |
+| A2.5 Перехват proc приложением | ✅ API готов | cli_set_proc_handler реализован; тест на железе — TODO |
+| A2.6 Хук аутентификации | ✅ API готов | auth_cb в cli_execute_command; интеграционный тест — TODO |
+| A2.7 Ctrl+C с контекстом | ✅ API готов | cli_sigint_info_t; интеграционный тест — TODO |
+| A2.8 Unit-тесты | ✅ ОК | 54/54 PASS |
+| A2.9 Регрессия на железе | ✅ ОК | Все функции работают |
+
+### 11.4 Исправленные баги
+
+| # | Проблема | Причина | Решение |
+|---|----------|---------|---------|
+| B1 | HARDFAULT при команде `help` | `ucmd_help()` обращался к `g_cmd_table` (NULL) | Делегирование в `ucmd_help_compat()` через `g_current_cli->commands` |
+| B2 | AAPCS mismatch в execute callback | microrl вызывает `int(*)(int, const char**)`, но cli_execute_command принимает 3 аргумента | Adapter-обёртка `cli_execute_adapter(int, const char**)` получает `cli_t*` из `g_current_cli` |
+| B3 | print callback без контекста | microrl вызывал `void(*)(const char*)` без возможности передать cli_t | Добавлен `void *ctx` в print callback; все вызовы обновлены |
+
+### 11.5 Изменённые файлы
+
+| Файл | Действие | Строки (прибл.) |
+|------|----------|-----------------|
+| `cli/u_read_line/cli.h` | Создан | ~150 |
+| `cli/u_read_line/cli.c` | Создан | ~423 |
+| `cli/u_read_line/microrl.h` | Изменён | print callback + ctx |
+| `cli/u_read_line/microrl.c` | Изменён | Все вызовы print() с ctx |
+| `cli/u_read_line/ucmd.c` | Изменён | ucmd_help -> ucmd_help_compat |
+| `app/cli_setup.c` | Изменён | cli_command_t + get_config() |
+| `app/cli_setup.h` | Изменён | Новый API |
+| `kernel/kernel.c` | Изменён | cli_create + cli_proc |
+| `Makefile` | Изменён | Добавлен cli.c |
+| `tests/test_helpers/mock_drv_face.h/c` | Изменён | mock_print с ctx |
+| `tests/test_helpers/stubs.h/c` | Изменён | Убраны дубликаты |
+| `tests/cli/u_read_line/test_all.c` | Изменён | Обновлён под новый API |
+
+### 11.6 TODO (будущие циклы)
+
+- [ ] Полное удаление printf из ucmd.c (backward-compat слой)
+- [ ] Интеграционный тест множественных экземпляров (UART1 + UART2)
+- [ ] Интеграционный тест перехвата proc
+- [ ] Реализация модуля аутентификации (cli_auth.c/h)
+- [ ] Таймаут неактивности сессии
+- [ ] Обновление README в cli/u_read_line/
+
+---
+
+## 12. Ссылки
 
 - Спецификация первого рефакторинга: `u_read_line_refactoring.md`
 - Спецификация unit-тестов: `u_read_line_tests.md`

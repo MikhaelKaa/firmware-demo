@@ -215,17 +215,17 @@ static int split(microrl_t *pThis, int limit, char const **tkn_arr)
 
 static inline void print_prompt(microrl_t *pThis)
 {
-    pThis->print(pThis->prompt_str);
+    pThis->print(pThis->prompt_str, pThis->print_ctx);
 }
 
 static inline void terminal_backspace(microrl_t *pThis)
 {
-    pThis->print("\033[D \033[D");
+    pThis->print("\033[D \033[D", pThis->print_ctx);
 }
 
 static inline void terminal_newline(microrl_t *pThis)
 {
-    pThis->print(ENDL);
+    pThis->print(ENDL, pThis->print_ctx);
 }
 
 #ifndef _USE_LIBC_STDIO
@@ -277,7 +277,7 @@ static void terminal_move_cursor(microrl_t *pThis, int offset)
     } else
         return;
 #endif
-    pThis->print(str);
+    pThis->print(str, pThis->print_ctx);
 }
 
 /** @brief Reset cursor position to beginning of command line. */
@@ -286,7 +286,7 @@ static void terminal_reset_cursor(microrl_t *pThis)
     char str[16];
 #ifdef _USE_LIBC_STDIO
     snprintf(str, 16, "\033[%dD\033[%dC", \
-                         _COMMAND_LINE_LEN + _PROMPT_LEN + 2, _PROMPT_LEN);
+                          _COMMAND_LINE_LEN + _PROMPT_LEN + 2, _PROMPT_LEN);
 
 #else
     char *endstr;
@@ -296,7 +296,7 @@ static void terminal_reset_cursor(microrl_t *pThis)
     endstr = u16bit_to_str(_PROMPT_LEN, endstr);
     strcpy(endstr, "C");
 #endif
-    pThis->print(str);
+    pThis->print(str, pThis->print_ctx);
 }
 
 /**
@@ -307,7 +307,7 @@ static void terminal_reset_cursor(microrl_t *pThis)
  */
 static void terminal_print_line(microrl_t *pThis, int pos, int cursor)
 {
-    pThis->print("\033[K"); /* delete all from cursor to end */
+    pThis->print("\033[K", pThis->print_ctx); /* delete all from cursor to end */
 
     char nch[2] = {0, 0};
     int i;
@@ -315,7 +315,7 @@ static void terminal_print_line(microrl_t *pThis, int pos, int cursor)
         nch[0] = pThis->cmdline[i];
         if (nch[0] == '\0')
             nch[0] = ' ';
-        pThis->print(nch);
+        pThis->print(nch, pThis->print_ctx);
     }
 
     terminal_reset_cursor(pThis);
@@ -331,7 +331,7 @@ static void terminal_print_line(microrl_t *pThis, int pos, int cursor)
  * @param pThis  Pointer to microrl context.
  * @param print  Callback for outputting strings.
  */
-void microrl_init(microrl_t *pThis, void (*print)(const char *))
+void microrl_init(microrl_t *pThis, void (*print)(const char *, void *ctx), void *ctx)
 {
     memset(pThis->cmdline, 0, _COMMAND_LINE_LEN);
 #ifdef _USE_HISTORY
@@ -357,6 +357,7 @@ void microrl_init(microrl_t *pThis, void (*print)(const char *))
 #endif
     pThis->prompt_str = prompt_default;
     pThis->print = print;
+    pThis->print_ctx = ctx;
 #ifdef _ENABLE_INIT_PROMPT
     print_prompt(pThis);
 #endif
@@ -562,8 +563,8 @@ static void microrl_get_complite(microrl_t *pThis)
             len = common_len(compl_token);
             terminal_newline(pThis);
             while (compl_token[i] != NULL) {
-                pThis->print(compl_token[i]);
-                pThis->print(" ");
+                pThis->print(compl_token[i], pThis->print_ctx);
+                pThis->print(" ", pThis->print_ctx);
                 i++;
             }
             terminal_newline(pThis);
@@ -599,8 +600,8 @@ static void new_line_handler(microrl_t *pThis)
 #endif
     status = split(pThis, pThis->cmdlen, tkn_arr);
     if (status == -1) {
-        pThis->print("ERROR:too many tokens");
-        pThis->print(ENDL);
+        pThis->print("ERROR:too many tokens", pThis->print_ctx);
+        pThis->print(ENDL, pThis->print_ctx);
     }
     if ((status > 0) && (pThis->execute != NULL))
         pThis->execute(status, tkn_arr);
@@ -626,6 +627,29 @@ static void new_line_handler(microrl_t *pThis)
  * Supports ESC-sequence timeout protection: if an incomplete escape sequence
  * is not finished within _ESC_TIMEOUT_US, the state is reset and the current
  * character is processed normally.
+ *
+ * @param pThis  Pointer to microrl context.
+ * @param ch     Received character.
+ */
+/**
+ * @brief Set echo mode (stub, not yet implemented).
+ * @param echo  1 to enable echo, 0 to disable.
+ * @note Full echo_off feature is planned for a future cycle.
+ */
+void microrl_set_echo(int echo)
+{
+    (void)echo; /* reserved for future echo_off implementation */
+}
+
+/**
+ * @brief Insert a character into the command line.
+ *
+ * This is the main entry point for character input. Typically called from
+ * UART RX interrupt or polling loop for each received byte.
+ *
+ * Supports ESC-sequence timeout protection: if an incomplete escape sequence
+ * is not finished within _ESC_TIMEOUT_US, the state is reset and the current
+ * character is processed as a normal printable character.
  *
  * @param pThis  Pointer to microrl context.
  * @param ch     Received character.
@@ -711,7 +735,7 @@ void microrl_insert_char(microrl_t *pThis, int ch)
                 break;
             //-----------------------------------------------------
             case KEY_VT: /* ^K — cut line from cursor to end */
-                pThis->print("\033[K");
+                pThis->print("\033[K", pThis->print_ctx);
                 pThis->cmdlen = pThis->cursor;
                 break;
             //-----------------------------------------------------
