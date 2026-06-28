@@ -515,23 +515,28 @@ static void microrl_backspace(microrl_t *pThis)
 /** @brief Calculate common prefix length of all strings in arr. */
 static int common_len(char **arr)
 {
-    int i;
-    int j;
+    size_t i;
+    size_t j;
     char *shortest = arr[0];
-    int shortlen = strlen(shortest);
+    size_t shortlen = strlen(shortest);
 
-    for (i = 0; arr[i] != NULL; ++i)
-        if (strlen(arr[i]) < shortlen) {
+    for (i = 0; arr[i] != NULL; ++i) {
+        size_t sl = strlen(arr[i]);
+        if (sl < shortlen) {
             shortest = arr[i];
-            shortlen = strlen(shortest);
+            shortlen = sl;
         }
+    }
 
-    for (i = 0; i < shortlen; ++i)
-        for (j = 0; arr[j] != 0; ++j)
-            if (shortest[i] != arr[j][i])
-                return i;
+    for (i = 0; i < shortlen; ++i) {
+        for (j = 0; arr[j] != 0; ++j) {
+            if (shortest[i] != arr[j][i]) {
+                return (int)i;
+            }
+        }
+    }
 
-    return i;
+    return (int)i;
 }
 
 /** @brief Handle Tab-completion request. */
