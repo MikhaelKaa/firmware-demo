@@ -2,3 +2,7 @@
 	path = firmware/core
 	url = git@github.com:MikhaelKaa/firmware-core.git
 	branch = DEV_BOARD/STM32F4XX_M
+[submodule "firmware/tests/unity"]
+	path = firmware/tests/unity
+	url = git@github.com:MikhaelKaa/unity.git
+	branch = main

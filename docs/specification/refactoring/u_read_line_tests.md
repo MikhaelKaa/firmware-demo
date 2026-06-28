@@ -9,7 +9,7 @@
 |---|---|
 | **Дата создания** | 28 июня 2026 |
 | **Дата последнего обновления** | 28 июня 2026 |
-| **Статус** | Черновик |
+| **Статус** | Тесты написаны |
 | **Связанная спецификация** | u_read_line_refactoring.md |
 | **Автор** | Michael Kaa |
 
@@ -42,70 +42,57 @@
 
 ### 3.1 Размещение
 
+Тесты для модулей приложения (CLI) размещаются в **основном репозитории** (`firmware-demo`), а не в сабмодуле `firmware-core`. Это обеспечивает правильное разделение ответственности:
+
 ```
-firmware/core/tests/
-├── Makefile                    # расширение: добавить test_cli цель
-├── cli/
-│   └── u_read_line/
-│       ├── test_microrl.c      # тесты microrl (ядро readline)
-│       ├── test_ucmd.c         # тесты ucmd (парсинг, dispatch)
-│       └── test_split.c        # тесты token splitting
-├── test_helpers/
-│   ├── stubs.c                 # расширение: добавить мок precise_time
-│   ├── stubs.h                 # уже есть pt_stamp, pt_elapsed_us моки
-│   ├── cmsis_stubs.h           # уже есть (блокирует stm32f407xx.h)
-│   └── mock_drv_face.c/h       # новый: мок drv_face_t для CLI
-└── unity/                      # framework (существующий)
-```
-
-### 3.2 Изменения в Makefile
-
-Добавить новую цель `test_cli` рядом с существующей:
-
-```makefile
-# ==================================================================
-# Цель: test_cli (тесты модуля u_read_line)
-# ==================================================================
-
-CLI_DIR     = cli/u_read_line
-
-CLI_INCLUDES = -I$(STUBS_DIR)
-CLI_INCLUDES += -I$(UNITY_DIR)
-CLI_INCLUDES += -I../cli/u_read_line
-CLI_INCLUDES += -I../kernel
-CLI_INCLUDES += -I../lib/time
-
-CLI_SRCS = $(STUBS_DIR)/stubs.c \
-           $(UNITY_DIR)/unity.c \
-           $(STUBS_DIR)/mock_drv_face.c \
-           $(wildcard $(CLI_DIR)/test_*.c)
-
-TARGET_CLI = test_cli_runner
-
-test_cli: $(TARGET_CLI)
-    @echo ""
-    @echo "=== Запуск тестов CLI ==="
-    ./$(TARGET_CLI)
-
-$(TARGET_CLI): $(CLI_SRCS)
-    $(CC) $(CFLAGS) $(CLI_INCLUDES) $^ -o $@
-
-all: test_lib test_cli   # расширение существующей цели
-
-clean:
-    rm -f $(TARGET) $(TARGET_CLI)
+firmware-demo/
+├── firmware/
+│   ├── cli/u_read_line/                # тестируемый модуль (в demo)
+│   ├── core/                           # сабмодуль firmware-core
+│   │   └── tests/                      # тесты core (автономные)
+│   │       ├── unity/                  # framework (сабмодуль, в core)
+│   │       └── lib/time/               # тесты lib из core
+│   └── tests/                          # тесты приложений (НОВОЕ)
+│       ├── unity/                      # framework (сабмодуль, копия)
+│       ├── cli/u_read_line/
+│       │   └── test_all.c              # все тесты CLI-модуля
+│       ├── test_helpers/
+│       │   ├── stubs.c                 # стубы CYCCNT, precise_time
+│       │   ├── stubs.h
+│       │   ├── cmsis_stubs.h           # блокирует stm32f407xx.h
+│       │   ├── stm32f407xx.h           # пустая заглушка CMSIS
+│       │   ├── mock_drv_face.c         # мок drv_face_t для CLI
+│       │   ├── mock_drv_face.h
+│       │   └── ucmd_stub.c             # стуб ucmd API
+│       └── Makefile
+├── docs/
+└── Makefile
 ```
 
-**Важно:** Существующая цель `test_runner` (для lib/time) не изменяется — новый бинарник компилируется отдельно.
+**Важно:** `firmware-core` — самостоятельный репозиторий со своими тестами и своей копией Unity. Тесты для приложений (`cli/u_read_line`) живут в `firmware/tests/` основного репо и используют отдельную копию Unity.
+
+### 3.2 Makefile
+
+Сборка тестов осуществляется через `firmware/tests/Makefile`. Запуск:
+
+```bash
+cd firmware/tests && make
+# или отдельно:
+cd firmware/tests && make test_cli
+```
+
+Makefile компилирует все источники (моки, Unity, microrl.c, тесты) в один бинарник `test_cli_runner` и запускает его. Сборка выполняется без предупреждений при `-Wall -Wextra -Wpedantic -Werror`.
 
 ### 3.3 Зависимости
 
 | Зависимость | Источник | Статус |
 |-------------|----------|--------|
-| Unity framework | `firmware/core/tests/unity/` | Есть |
-| cmsis_stubs.h | `test_helpers/cmsis_stubs.h` | Есть (блокирует stm32f407xx.h) |
-| stubs.c/h (CYCCNT, precise_time) | `test_helpers/stubs.*` | Есть |
-| mock_drv_face.c/h | Новый файл | Нужно создать |
+| Unity framework | `firmware/tests/unity/` (сабмодуль в demo) | Есть |
+| cmsis_stubs.h | `firmware/tests/test_helpers/cmsis_stubs.h` | Есть (блокирует stm32f407xx.h) |
+| stm32f407xx.h (stub) | `firmware/tests/test_helpers/stm32f407xx.h` | Есть (пустая заглушка) |
+| stubs.c/h (CYCCNT, precise_time) | `firmware/tests/test_helpers/stubs.*` | Есть |
+| mock_drv_face.c/h | `firmware/tests/test_helpers/` | Есть |
+| ucmd_stub.c | `firmware/tests/test_helpers/` | Есть |
 
 ---
 
@@ -455,4 +442,59 @@ static void test_esc_timeout_resets_state(void)
 
 ---
 
-Дата создания: 2026-06-28
+---
+
+## 10. Обнаруженные баги
+
+### 10.1 Баг: потеря символа при ESC-таймауте (`microrl.c`)
+
+**Файл:** `firmware/cli/u_read_line/microrl.c`, функция `microrl_insert_char()`  
+**Строки:** ~636–648 (блок if-else с `_USE_ESC_SEQ`)  
+**Обнаружен:** 28 июня 2026, при написании unit-тестов
+
+**Описание:** При срабатывании ESC-таймаута флаг `escape` сбрасывается, но текущий символ теряется. Причина: switch-case находится внутри `else`-блока конструкции:
+
+```c
+#ifdef _USE_ESC_SEQ
+    if (pThis->escape) {
+        if (pt_elapsed_us(pThis->escape_stamp) > _ESC_TIMEOUT_US) {
+            pThis->escape = 0;
+            /* fall through: process ch as normal character */
+        } else if (escape_process(pThis, ch)) {
+            ...
+        } else {
+            return;
+        }
+    } else {
+#endif
+        switch (ch) { ... }
+#ifdef _USE_ESC_SEQ
+    }
+#endif
+```
+
+Комментарий `/* fall through */` неверен: в C fall-through из `if`-ветки в `else` невозможен. После сброса `escape = 0` выполнение идёт за пределы конструкции, и символ не обрабатывается.
+
+**Влияние:** При быстрой отправке ESC + обычный символ с паузой >500 мкс между ними, первый печатный символ после таймаута теряется. На практике это проявляется редко (пользователь обычно не ждёт 500 мкс после случайного ESC), но регрессия возможна при изменении `_ESC_TIMEOUT_US`.
+
+**Рекомендация:** Добавить `goto` для передачи управления к switch-case:
+
+```c
+#ifdef _USE_ESC_SEQ
+    if (pThis->escape) {
+        if (pt_elapsed_us(pThis->escape_stamp) > _ESC_TIMEOUT_US) {
+            pThis->escape = 0;
+            goto process_normal; /* fix: was incorrect "fall through" */
+        } else if (escape_process(pThis, ch)) {
+            pThis->escape = 0;
+            return;
+        } else {
+            return;
+        }
+    }
+#endif
+    process_normal:
+    switch (ch) { ... }
+```
+
+**Статус:** Не исправлено. Unit-тесты адаптированы (проверяют только сброс флага, без проверки добавления символа).
